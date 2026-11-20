@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>DiTect — Verify your claim</title>
+<style>
+  :root { --bg:#0b0d10; --card:#151a20; --fg:#f2f4f7; --muted:#9aa4b2; --accent:#4f8cff; --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  main { max-width:480px; margin:0 auto; padding:16px; }
+  h1 { font-size:20px; margin:4px 0 2px; } .sub { color:var(--muted); margin:0 0 14px; font-size:14px; }
+  .stage { position:relative; background:#000; border-radius:14px; overflow:hidden; aspect-ratio:3/4; }
+  video { width:100%; height:100%; object-fit:cover; display:block; }
+  .overlay { position:absolute; left:0; right:0; top:0; padding:12px; background:linear-gradient(#000c,#0000); }
+  .gesture { font-weight:600; font-size:17px; } .digits { font-size:28px; letter-spacing:8px; font-weight:800; color:#fff; margin-top:4px; }
+  .timer { position:absolute; right:12px; bottom:12px; background:var(--bad); padding:4px 10px; border-radius:99px; font-weight:700; }
+  .hidden { display:none !important; }
+  input { width:100%; padding:12px; border-radius:10px; border:1px solid #2a3340; background:var(--card); color:var(--fg); font-size:16px; margin:12px 0; }
+  button { width:100%; padding:14px; border:0; border-radius:12px; background:var(--accent); color:#fff; font-size:17px; font-weight:700; margin-top:10px; }
+  button:disabled { opacity:.5; }
+  .card { background:var(--card); border-radius:14px; padding:14px; margin-top:14px; }
+  .verdict { font-size:24px; font-weight:800; }
+  .VERIFIED { color:var(--ok); } .SUSPICIOUS { color:var(--warn); } .REJECTED { color:var(--bad); }
+  ul { padding-left:18px; margin:8px 0; } .small { color:var(--muted); font-size:12px; word-break:break-all; }
+</style>
+</head>
+<body>
+<main>
+  <h1>DiTect</h1>
+  <p class="sub">Record a live 8-second clip of the damaged item. No uploads — camera only.</p>
+
+  <input id="orderId" placeholder="Order ID / AWB (optional)" autocomplete="off">
+
+  <div class="stage">
+    <video id="live" playsinline muted autoplay></video>
+    <video id="replay" class="hidden" playsinline controls></video>
+    <div id="overlay" class="overlay hidden">
+      <div class="gesture" id="gesture"></div>
+      <div>Say aloud:</div>
+      <div class="digits" id="digits"></div>
+    </div>
+    <div id="timer" class="timer hidden">8</div>
+  </div>
+
+  <button id="startCam">Start camera</button>
+  <button id="record" class="hidden">Get challenge &amp; record</button>
+  <div id="status" class="sub" style="margin-top:10px"></div>
+
+  <div id="result" class="card hidden"></div>
+</main>
+
+<script>
+const RECORD_SECONDS = 8;
+const $ = (id) => document.getElementById(id);
+let stream;
+
+function pickMime() {
+  const options = ["video/mp4;codecs=avc1,mp4a", "video/mp4", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
+  return options.find((m) => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || "";
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(",")[1]);
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+  });
+}
+
+$("startCam").onclick = async () => {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: true,
+    });
+    $("live").srcObject = stream;
+    $("startCam").classList.add("hidden");
+    $("record").classList.remove("hidden");
+    $("status").textContent = "Point the camera at the damage, then tap record.";
+  } catch (e) {
+    $("status").textContent = "Camera/mic permission needed: " + e.message;
+  }
+};
+
+$("record").onclick = async () => {
+  $("record").disabled = true;
+  $("result").classList.add("hidden");
+  $("replay").classList.add("hidden");
+  $("live").classList.remove("hidden");
+
+  // Challenge is fetched only now, so it cannot be prepared in advance.
+  $("status").textContent = "Getting your challenge…";
+  const ch = await fetch("/api/challenge").then((r) => r.json());
+  $("gesture").textContent = ch.gesture;
+  $("digits").textContent = ch.digits.split("").join(" ");
+  $("overlay").classList.remove("hidden");
+
+  const mimeType = pickMime();
+  const rec = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 1_000_000 });
+  const chunks = [];
+  rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  rec.start();
+
+  let left = RECORD_SECONDS;
+  $("timer").textContent = left;
+  $("timer").classList.remove("hidden");
+  $("status").textContent = "Recording… do the gesture and say the digits.";
+  const tick = setInterval(() => { left--; $("timer").textContent = left; if (left <= 0) { clearInterval(tick); rec.stop(); } }, 1000);
+
+  rec.onstop = async () => {
+    $("timer").classList.add("hidden");
+    $("overlay").classList.add("hidden");
+    const blob = new Blob(chunks, { type: rec.mimeType || mimeType || "video/webm" });
+    $("live").classList.add("hidden");
+    $("replay").src = URL.createObjectURL(blob);
+    $("replay").classList.remove("hidden");
+
+    $("status").textContent = `Checking with Gemini… (${(blob.size / 1e6).toFixed(1)} MB)`;
+    try {
+      const resp = await fetch("/api/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          challengeId: ch.challengeId,
+          mimeType: blob.type.split(";")[0],
+          video: await blobToBase64(blob),
+          orderId: $("orderId").value.trim() || undefined,
+        }),
+      });
+      const data = await resp.json();
+      showResult(data);
+      $("status").textContent = "";
+    } catch (e) {
+      $("status").textContent = "Verification failed: " + e.message;
+    }
+    $("record").disabled = false;
+    $("record").textContent = "Record again";
+  };
+};
+
+function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+function showResult(d) {
+  const box = $("result");
+  if (d.error && !d.gemini) {
+    box.innerHTML = `<div class="verdict REJECTED">${esc(d.verdict || "ERROR")}</div><p>${esc(d.error)}</p>`;
+  } else {
+    const g = d.gemini;
+    const reasons = [...(d.ruleReasons || []), ...(g.reasons || [])];
+    box.innerHTML = `
+      <div class="verdict ${d.verdict}">${d.verdict}</div>
+      <p><b>Damage:</b> ${esc(g.damage_description || "—")}</p>
+      <p><b>Heard code:</b> ${esc(g.spoken_digits || "—")} ${d.codeMatches ? "✅" : "❌"} · <b>Gesture:</b> ${g.challenge_gesture_performed ? "✅" : "❌"}</p>
+      ${g.label_visible ? `<p><b>Label:</b> ${esc(g.label_text)}${d.labelMatchesOrder === false ? " ⚠️ doesn't match order" : ""}</p>` : ""}
+      <ul>${reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>
+      <p class="small">Claim ${esc(d.claimId)} · ${esc(d.model)} · ${d.latencyMs} ms · confidence ${g.confidence}<br>sha256 ${esc(d.videoSha256)}</p>`;
+  }
+  box.classList.remove("hidden");
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+{
+  "type": "object",
+  "properties": {
+    "challenge_gesture_performed": { "type": "boolean" },
+    "challenge_evidence": { "type": "string", "description": "What the person did for the gesture, one sentence" },
+    "spoken_digits": { "type": "string", "description": "Digits spoken aloud, digits only, empty if none" },
+    "damage_visible": { "type": "boolean" },
+    "damage_description": { "type": "string" },
+    "damage_consistent_across_frames": { "type": "boolean" },
+    "label_visible": { "type": "boolean" },
+    "label_text": { "type": "string", "description": "Order ID or AWB read from the label, empty if unreadable" },
+    "screen_recapture_suspected": { "type": "boolean" },
+    "screen_recapture_signals": { "type": "array", "items": { "type": "string" } },
+    "ai_manipulation_suspected": { "type": "boolean" },
+    "ai_manipulation_signals": { "type": "array", "items": { "type": "string" } },
+    "confidence": { "type": "number", "description": "0 to 1, confidence in the overall assessment" },
+    "reasons": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": [
+    "challenge_gesture_performed", "challenge_evidence", "spoken_digits",
+    "damage_visible", "damage_description", "damage_consistent_across_frames",
+    "label_visible", "label_text",
+    "screen_recapture_suspected", "screen_recapture_signals",
+    "ai_manipulation_suspected", "ai_manipulation_signals",
+    "confidence", "reasons"
+  ]
+}
