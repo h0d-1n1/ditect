@@ -6,13 +6,6 @@ const GESTURES = [
   "Make a thumbs-up beside the damage",
   "Point at the damage with one finger, then show your open palm",
   "Tap the item twice near the damage",
-  "Show the damage, then turn the item to show its other side",
-  "Move the camera closer to the damage, then show the shipping label",
-  "Place a coin or key next to the damage",
-  "Show the damage, then make an OK sign beside it",
-  "Show the damage from the left side, then from the right side",
-  "Cover half the damage with your hand, then uncover it",
-  "Show the shipping label first, then the damage"
 ];
 
 function randomChallenge() {

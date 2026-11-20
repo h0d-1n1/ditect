@@ -15,8 +15,58 @@ const db = admin.firestore();
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
 
 // Pick the newest Flash model listed in AI Studio and put its exact name here.
-const MODEL = process.env.GEMINI_MODEL || "gemini-flash-latest";
+const MODEL = process.env.GEMINI_MODEL || "gemini-4-hydrogen";
 const CHALLENGE_TTL_MS = 2 * 60 * 1000; // challenge valid for 2 minutes
+// Model chain: tried in order until one answers.
+const MODEL_CHAIN = [
+  "gemini-3.1-flash-lite",
+  "gemini-2.5-flash-lite",
+  "gemini-4-hydrogen",
+  "gemini-3.5-flash",
+  "gemini-2.5-flash",
+];
+// Firebase Hosting cuts requests off at ~60s, so the whole chain must finish in 50s.
+const TOTAL_BUDGET_MS = 50000;
+const PER_CALL_MS = 15000;
+
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, rej) => setTimeout(() => rej(new Error("TIMEOUT")), ms)),
+  ]);
+}
+
+async function callGemini(ai, req) {
+  const deadline = Date.now() + TOTAL_BUDGET_MS;
+  let lastErr = new Error("NO_MODEL_TRIED");
+
+  for (const m of MODEL_CHAIN) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const remaining = deadline - Date.now();
+      if (remaining < 3000) throw lastErr; // out of time: give up cleanly
+
+      try {
+        const res = await withTimeout(
+          ai.models.generateContent({ ...req, model: m }),
+          Math.min(PER_CALL_MS, remaining)
+        );
+        return { res, modelUsed: m };
+      } catch (e) {
+        lastErr = e;
+        console.warn(`Gemini fail model=${m} attempt=${attempt}:`, e?.message || e);
+        const msg = String(e?.status || e?.message || e);
+        // Only retry the same model if it was busy; otherwise jump to the next model.
+        if (!/503|UNAVAILABLE|429|RESOURCE_EXHAUSTED|high demand|overloaded/i.test(msg)) break;
+        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+      }
+    }
+  }
+  throw lastErr;
+}
+
+function manualReview(reason) {
+  return { verdict: "MANUAL_REVIEW", reasons: [reason], ruleReasons: [reason], confidence: 0 };
+}
 
 const SYSTEM_PROMPT = fs.readFileSync(path.join(__dirname, "system_prompt.md"), "utf8");
 const JSON_SCHEMA = JSON.parse(fs.readFileSync(path.join(__dirname, "response_schema.json"), "utf8"));
@@ -97,8 +147,9 @@ async function verifyClaim(req, res) {
     `Assess the video now.`;
 
   const started = Date.now();
-  const result = await ai.models.generateContent({
-    model: MODEL,
+let result, modelUsed = null;
+try {
+  const out = await callGemini(ai, {
     contents: [{ role: "user", parts: [{ inlineData: { mimeType: cleanMime, data: video } }, { text: userText }] }],
     config: {
       systemInstruction: SYSTEM_PROMPT,
@@ -107,7 +158,26 @@ async function verifyClaim(req, res) {
       temperature: 0,
     },
   });
-  const gemini = JSON.parse(result.text);
+  result = out.res;
+  modelUsed = out.modelUsed;
+} catch (e) {
+  console.error("All models failed:", e?.message || e);
+  return res.json({
+    ...manualReview("Automated check unavailable: " + String(e?.message || e).slice(0, 300)),
+    modelUsed: null,
+    latencyMs: Date.now() - started,
+  });
+}
+  let gemini;
+try {
+  gemini = JSON.parse(result.text);
+} catch {
+  return res.json({
+    ...manualReview("AI returned unreadable output. Routed to human review."),
+    modelUsed,
+    latencyMs: Date.now() - started,
+  });
+}
   const decision = decide(gemini, ch.digits);
 
   const labelMatchesOrder = orderId && gemini.label_text
@@ -119,7 +189,7 @@ async function verifyClaim(req, res) {
     createdAt: Date.now(),
     orderId: orderId || null,
     challenge: { gesture: ch.gesture, digits: ch.digits },
-    model: MODEL,
+    model: modelUsed,
     latencyMs: Date.now() - started,
     videoSha256: sha256,
     videoBytes: bytes.length,
