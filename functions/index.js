@@ -20,10 +20,9 @@ const CHALLENGE_TTL_MS = 2 * 60 * 1000; // challenge valid for 2 minutes
 // Model chain: tried in order until one answers.
 const MODEL_CHAIN = [
   "gemini-3.1-flash-lite",
-  "gemini-2.5-flash-lite",
-  "gemini-4-hydrogen",
-  "gemini-3.5-flash",
-  "gemini-2.5-flash",
+  "gemini-3.8-flash",
+  "gemini-3.5-flash-lite",
+  "gemini-flash-lite-latest",
 ];
 // Firebase Hosting cuts requests off at ~60s, so the whole chain must finish in 50s.
 const TOTAL_BUDGET_MS = 50000;

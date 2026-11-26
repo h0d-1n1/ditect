@@ -1,8 +1,7 @@
 // Gestures the customer must perform while recording. Paired with 3 random spoken digits,
 // so a pre-made or AI-generated video cannot match the challenge.
 const GESTURES = [
-  "Hold up 3 fingers right next to the damage",
-  "Hold up 2 fingers right next to the damage",
+  "Hold up 1 fingers right next to the damage",
   "Make a thumbs-up beside the damage",
   "Point at the damage with one finger, then show your open palm",
   "Tap the item twice near the damage",

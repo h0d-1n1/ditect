@@ -14,6 +14,11 @@ Check, in this order:
    - Is physical damage clearly visible (crack, dent, tear, leak, stain, broken part, spoiled food)?
    - Describe it in one short sentence: what item, what damage, where on the item.
    - Is the damage consistent across frames and angles (same shape, size, position as the camera moves)? Painted-on or edited damage often shifts, flickers, or does not follow the object's surface and lighting.
+   DAMAGE RULES (strict):
+ - Normal design features are NOT damage: can openings and pull tabs, seams, ridges, labels, printed text, barcodes, reflections, glare, shadows, motion blur, compression artifacts.
+ - Only report damage_visible = true if a dent, crack, tear, puncture, crush, stain or break is clearly visible in at least two separate frames, at the same location on the object.
+ - If you are not sure, set damage_visible = false and say "no clear damage" in damage_description.
+ - Being wrong about "no damage" is acceptable. Inventing damage that is not there is a serious error.
 
 3. LABEL
    - Is a shipping label, order slip or invoice visible? If yes, transcribe any order ID or AWB number you can read.
